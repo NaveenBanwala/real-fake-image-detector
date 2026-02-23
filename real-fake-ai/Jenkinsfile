@@ -37,12 +37,18 @@ pipeline {
             }
         }
 
-        stage('Terraform Infra Provisioning') {
+      stage('Terraform Infra Provisioning') {
             steps {
-                dir('terraform') {
-                    // Builds the EC2 instance on AWS
-                    sh 'terraform init'
-                    sh 'terraform apply -auto-approve'
+                script {
+                    // This 'Terraform' must match the name you gave in Jenkins Tools
+                    def tfHome = tool name: 'Terraform' 
+                    
+                    withEnv(["PATH+TF=${tfHome}"]) {
+                        dir('terraform') {
+                            sh 'terraform init'
+                            sh 'terraform apply -auto-approve'
+                        }
+                    }
                 }
             }
         }
