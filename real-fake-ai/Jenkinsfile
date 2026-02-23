@@ -37,14 +37,14 @@ pipeline {
             }
         }
 
-      stage('Terraform Infra Provisioning') {
+    stage('Terraform Infra Provisioning') {
             steps {
                 script {
-                    // This 'Terraform' must match the name you gave in Jenkins Tools
                     def tfHome = tool name: 'Terraform' 
                     
                     withEnv(["PATH+TF=${tfHome}"]) {
-                        dir('terraform') {
+                        // Updated path to match your structure
+                        dir('real-fake-ai/terraform') { 
                             sh 'terraform init'
                             sh 'terraform apply -auto-approve'
                         }
@@ -56,12 +56,9 @@ pipeline {
         stage('Kubernetes Deployment') {
             steps {
                 script {
-                    echo "Deploying to Kubernetes Cluster on AWS..."
-                    /* Note: In a real EKS setup, you'd run 'aws eks update-kubeconfig'.
-                       For your showcase, we will apply the manifests.
-                    */
-                    sh "kubectl apply -f k8s/deployment.yaml"
-                    sh "kubectl apply -f k8s/service.yaml"
+                    // Updated paths to match your structure
+                    sh "kubectl apply -f real-fake-ai/k8s/deployment.yaml"
+                    sh "kubectl apply -f real-fake-ai/k8s/service.yaml"
                 }
             }
         }
