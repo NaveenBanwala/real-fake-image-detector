@@ -53,12 +53,16 @@ pipeline {
             }
         }
 
-        stage('Kubernetes Deployment') {
+    stage('Kubernetes Deployment') {
             steps {
                 script {
-                    // Updated paths to match your structure
-                    sh "kubectl apply -f real-fake-ai/k8s/deployment.yaml"
-                    sh "kubectl apply -f real-fake-ai/k8s/service.yaml"
+                    // This 'Kubectl' must match the 'Name' you gave in Jenkins Tools
+                    def k8sHome = tool name: 'Kubectl' 
+                    
+                    withEnv(["PATH+K8S=${k8sHome}"]) {
+                        sh "kubectl apply -f real-fake-ai/k8s/deployment.yaml"
+                        sh "kubectl apply -f real-fake-ai/k8s/service.yaml"
+                    }
                 }
             }
         }

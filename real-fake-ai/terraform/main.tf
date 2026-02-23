@@ -1,5 +1,5 @@
 provider "aws" {
-  region = "us-east-1" 
+  region = var.aws_region
 }
 
 resource "aws_security_group" "detector_sg" {
