@@ -2,45 +2,25 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE = "yourusername/real-fake-api"
-        CONTAINER_NAME = "image-classifier-service"
+        DOCKER_IMAGE = "naveenbanwala/real-fake-api"
+        CONTAINER_NAME = "image-api"
         IMAGE_TAG = "${BUILD_NUMBER}"
+        NETWORK_NAME = "detector-net" // Define a custom network
     }
 
     stages {
-
         stage('Checkout Code') {
             steps {
-                checkout scm
+                checkout([$class: 'GitSCM', branches: [[name: '*/main']], userRemoteConfigs: [[url: 'https://github.com/NaveenBanwala/real-fake-image-detector.git']]])
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build & Push') {
             steps {
                 sh """
-                    docker build -t ${DOCKER_IMAGE}:latest .
+                    docker build -t ${DOCKER_IMAGE}:latest real-fake-ai
                     docker tag ${DOCKER_IMAGE}:latest ${DOCKER_IMAGE}:${IMAGE_TAG}
-                """
-            }
-        }
-
-        stage('Login to Docker Hub') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-credentials',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh """
-                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                    """
-                }
-            }
-        }
-
-        stage('Push Image') {
-            steps {
-                sh """
+                    # Assuming you are already logged in via your credentials block
                     docker push ${DOCKER_IMAGE}:latest
                     docker push ${DOCKER_IMAGE}:${IMAGE_TAG}
                 """
@@ -50,32 +30,57 @@ pipeline {
         stage('Deploy Container') {
             steps {
                 sh """
-                    docker stop ${CONTAINER_NAME} || true
-                    docker rm ${CONTAINER_NAME} || true
+                    # 1. Create the network if it doesn't exist
+                    docker network create ${NETWORK_NAME} || true
+                    
+                    # 2. Stop and remove old container
+                    docker rm -f ${CONTAINER_NAME} || true
 
+                    # 3. Run the container on the custom network
                     docker run -d \
                         --name ${CONTAINER_NAME} \
+                        --network ${NETWORK_NAME} \
                         -p 8000:8000 \
                         --restart unless-stopped \
                         ${DOCKER_IMAGE}:latest
+                    
+                    # 4. Connect Jenkins to the same network (Crucial!)
+                    # We use 'hostname -i' or similar to find Jenkins' own container ID
+                    JENKINS_CONTAINER_ID=\$(cat /proc/self/cgroup | grep 'docker' | sed 's/^.*\\///' | tail -n1)
+                    docker network connect ${NETWORK_NAME} \$JENKINS_CONTAINER_ID || true
                 """
             }
         }
 
-        stage('Health Check') {
-            steps {
-                sleep 10
-                sh "curl -f http://localhost:8000/docs"
+ stage('Health Check') {
+    steps {
+        script {
+            echo "Checking connectivity via container name: http://${CONTAINER_NAME}:8000/docs"
+            
+            timeout(time: 2, unit: 'MINUTES') { // AI models can take a moment to load
+                waitUntil {
+                    // We add '|| true' so curl failing doesn't kill the whole pipeline
+                    def status = sh(
+                        script: "curl -s -o /dev/null -w '%{http_code}' http://${CONTAINER_NAME}:8000/docs || true", 
+                        returnStdout: true
+                    ).trim()
+                    
+                    if (status == "200") {
+                        echo "✅ App is up and running!"
+                        return true
+                    } else {
+                        echo "Waiting for app... (Current Status: ${status})"
+                        return false
+                    }
+                }
             }
         }
     }
+}
+}
 
     post {
-        success {
-            echo '✅ CI/CD Pipeline Completed Successfully!'
-        }
-        failure {
-            echo '❌ Pipeline Failed. Check logs.'
-        }
+        success { echo '✅ CI/CD Pipeline Completed Successfully!' }
+        failure { echo '❌ Pipeline Failed. Check logs.' }
     }
 }
