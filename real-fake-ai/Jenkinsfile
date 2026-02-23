@@ -1,0 +1,81 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_IMAGE = "yourusername/real-fake-api"
+        CONTAINER_NAME = "image-classifier-service"
+        IMAGE_TAG = "${BUILD_NUMBER}"
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh """
+                    docker build -t ${DOCKER_IMAGE}:latest .
+                    docker tag ${DOCKER_IMAGE}:latest ${DOCKER_IMAGE}:${IMAGE_TAG}
+                """
+            }
+        }
+
+        stage('Login to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh """
+                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                    """
+                }
+            }
+        }
+
+        stage('Push Image') {
+            steps {
+                sh """
+                    docker push ${DOCKER_IMAGE}:latest
+                    docker push ${DOCKER_IMAGE}:${IMAGE_TAG}
+                """
+            }
+        }
+
+        stage('Deploy Container') {
+            steps {
+                sh """
+                    docker stop ${CONTAINER_NAME} || true
+                    docker rm ${CONTAINER_NAME} || true
+
+                    docker run -d \
+                        --name ${CONTAINER_NAME} \
+                        -p 8000:8000 \
+                        --restart unless-stopped \
+                        ${DOCKER_IMAGE}:latest
+                """
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                sleep 10
+                sh "curl -f http://localhost:8000/docs"
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ CI/CD Pipeline Completed Successfully!'
+        }
+        failure {
+            echo '❌ Pipeline Failed. Check logs.'
+        }
+    }
+}
