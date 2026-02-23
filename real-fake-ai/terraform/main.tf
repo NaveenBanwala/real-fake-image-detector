@@ -29,9 +29,10 @@ resource "aws_security_group" "detector_sg" {
 }
 
 resource "aws_instance" "app_server" {
-  ami           = "ami-0c7217cdde317cfec" # Ubuntu 22.04 LTS
-  instance_type = "t3.medium"             # Needed for TensorFlow RAM requirements
-  key_name      = "NaveenBanwala"    # <-- CHANGE THIS
+  # Updated AMI for ap-south-1 (Mumbai)
+  ami           = "ami-0522ab6e1ddcc7055" 
+  instance_type = "t3.medium"
+  key_name      = "NaveenBanwala"
 
   vpc_security_group_ids = [aws_security_group.detector_sg.id]
 
