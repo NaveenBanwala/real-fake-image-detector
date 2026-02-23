@@ -31,7 +31,7 @@ resource "aws_security_group" "detector_sg" {
 resource "aws_instance" "app_server" {
   # Updated AMI for ap-south-1 (Mumbai)
   ami           = "ami-0522ab6e1ddcc7055" 
-  instance_type = "t3.medium"
+  instance_type = "t3.micro"
   key_name      = "NaveenBanwala"
 
   vpc_security_group_ids = [aws_security_group.detector_sg.id]
