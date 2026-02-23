@@ -8,3 +8,18 @@ real-fake-ai/
 ├── requirements.txt
 ├── Dockerfile
 └── Jenkinsfile
+
+
+
+real-fake-ai/
+├── app/                  # FastAPI Python code
+├── terraform/            # .tf files to build AWS infra
+│   ├── main.tf
+│   ├── variables.tf
+│   └── outputs.tf
+├── k8s/                  # Kubernetes manifests
+│   ├── deployment.yaml
+│   └── service.yaml
+├── Dockerfile            # Instructions for the image
+├── Jenkinsfile           # The automated "boss" script
+└── requirements.txt      # Python dependencies
