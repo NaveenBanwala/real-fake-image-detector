@@ -45,7 +45,7 @@ pipeline {
                 withEnv(["PATH+TF=${tfHome}"]) {
                     dir('real-fake-ai/terraform') { 
                         // Force clean the stale state from us-east-1
-                        sh 'rm -rf .terraform* terraform.tfstate*'
+                        // sh 'rm -rf .terraform* terraform.tfstate*'
                         
                         sh 'terraform init'
                         sh 'terraform apply -auto-approve'

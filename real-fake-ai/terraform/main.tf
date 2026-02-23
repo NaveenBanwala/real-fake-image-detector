@@ -3,7 +3,7 @@ provider "aws" {
 }
 
 resource "aws_security_group" "detector_sg" {
-  name        = "real-fake-detector-sg"
+  name        = "real-fake-detector-sg-v2"
   description = "Allow inbound traffic for App and SSH"
 
   ingress {
