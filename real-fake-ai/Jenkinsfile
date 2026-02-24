@@ -55,23 +55,24 @@ pipeline {
      stage('Kubernetes Deployment') {
     steps {
         script {
-          sshagent(['aws-ssh-key']) {
-    sh """
-    ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
-        echo "Waiting for K3s to initialize..."
-        # This loop waits until kubectl is actually a valid command
-        until command -v kubectl >/dev/null 2>&1; do echo "Installing K8s..."; sleep 10; done
-        # This loop waits until the node is 'Ready'
-        until sudo kubectl get nodes | grep -q "Ready"; do echo "Node not ready yet..."; sleep 5; done
-        
-        sudo kubectl delete deployment ${CONTAINER_NAME} || true
-        sudo kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
-        sudo kubectl delete service ${CONTAINER_NAME} || true
-        sudo kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000 --node-port=8000
-    EOF
-    """
-}
-        
+            sshagent(['aws-ssh-key']) {
+                sh """
+                ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
+                    # Wait for K3s to be ready
+                    until sudo kubectl get nodes; do sleep 5; done
+                    
+                    # Cleanup old runs
+                    sudo kubectl delete service ${CONTAINER_NAME} || true
+                    sudo kubectl delete deployment ${CONTAINER_NAME} || true
+                    
+                    # Deploy specific build version
+                    sudo kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
+                    
+                    # Expose on Port 8000 specifically
+                    sudo kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000 --node-port=8000
+                EOF
+                """
+            }
         }
     
 }
