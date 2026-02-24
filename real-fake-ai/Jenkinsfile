@@ -52,24 +52,34 @@ pipeline {
             }
         }
 stage('Kubernetes Deployment') {
-            steps {
-                script {
-                    sh "sleep 60" 
-                    sshagent(['aws-ssh-key']) {
-                        sh """
+    steps {
+        script {
+            sh "sleep 60" 
+            sshagent(['aws-ssh-key']) {
+                sh """
 ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
 echo "Starting Deployment..."
+
+# 1. Cleanup
 sudo /usr/local/bin/kubectl delete service ${CONTAINER_NAME} --ignore-not-found
 sudo /usr/local/bin/kubectl delete deployment ${CONTAINER_NAME} --ignore-not-found
+
+# 2. Create Deployment
 sudo /usr/local/bin/kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
-sudo /usr/local/bin/kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000 --node-port=8000
+
+# 3. Create Service (without the broken flag)
+sudo /usr/local/bin/kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000
+
+# 4. Force Kubernetes to use Port 8000 for the NodePort
+sudo /usr/local/bin/kubectl patch svc ${CONTAINER_NAME} --type='json' -p '[{"op":"replace","path":"/spec/ports/0/nodePort","value":8000}]'
+
 echo "Deployment Complete!"
 EOF
-                        """
-                    }
-                }
+                """
             }
         }
+    }
+}
 
         stage('Health Check') {
             steps {
