@@ -35,40 +35,47 @@ pipeline {
             }
         }
 
-        stage('Terraform Infra Provisioning') {
-            steps {
-                script {
-                    def tfHome = tool name: 'Terraform' 
-                    withEnv(["PATH+TF=${tfHome}"]) {
-                        dir('real-fake-ai/terraform') { 
-                            sh 'terraform init'
-                            sh 'terraform apply -auto-approve'
-                            
-                            // Capture the IP dynamically so the next stages actually work
-                            env.SERVER_IP = sh(script: "terraform output -raw instance_ip", returnStdout: true).trim()
-                        }
-                    }
+    stage('Terraform Infra Provisioning') {
+    steps {
+        script {
+            def tfHome = tool name: 'Terraform' 
+            withEnv(["PATH+TF=${tfHome}"]) {
+                dir('real-fake-ai/terraform') { 
+                    sh 'terraform init'
+                    sh 'terraform apply -auto-approve'
+                    
+                    // THIS IS THE KEY: Capture the output IP
+                    env.SERVER_IP = sh(script: "terraform output -raw instance_ip", returnStdout: true).trim()
                 }
             }
         }
+    }
+}
 
-        stage('Kubernetes Deployment') {
-            steps {
-                script {
-                    sshagent(['aws-ssh-key']) {
-                        sh """
-                        ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
-                            until sudo kubectl get nodes; do sleep 5; done
-                            sudo kubectl delete deployment ${CONTAINER_NAME} || true
-                            sudo kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
-                            sudo kubectl delete service ${CONTAINER_NAME} || true
-                            sudo kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000
-                        EOF
-                        """
-                    }
-                }
+     stage('Kubernetes Deployment') {
+    steps {
+        script {
+            sshagent(['aws-ssh-key']) {
+                sh """
+                ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
+                    # Wait for K3s to be ready
+                    until sudo kubectl get nodes; do sleep 5; done
+                    
+                    # Cleanup old runs
+                    sudo kubectl delete service ${CONTAINER_NAME} || true
+                    sudo kubectl delete deployment ${CONTAINER_NAME} || true
+                    
+                    # Deploy specific build version
+                    sudo kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
+                    
+                    # Expose on Port 8000 specifically
+                    sudo kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000 --node-port=8000
+                EOF
+                """
             }
         }
+    }
+}
 
         stage('Health Check') {
             steps {
