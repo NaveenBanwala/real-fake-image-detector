@@ -51,31 +51,34 @@ pipeline {
                 }
             }
         }
-
-        stage('Kubernetes Deployment') {
-            steps {
-                script {
-                    sshagent(['aws-ssh-key']) {
-                        sh """
-                        ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
-                            # Wait for K3s to be ready
-                            until sudo kubectl get nodes; do echo "Waiting for K8s..."; sleep 5; done
-                            
-                            # Cleanup old runs
-                            sudo kubectl delete service ${CONTAINER_NAME} || true
-                            sudo kubectl delete deployment ${CONTAINER_NAME} || true
-                            
-                            # Deploy specific build version
-                            sudo kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
-                            
-                            # Expose on Port 8000 specifically
-                            sudo kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000 --node-port=8000
-                        EOF
-                        """
-                    }
-                }
+    stage('Kubernetes Deployment') {
+    steps {
+        script {
+            // Give the new OS 30 seconds to finish booting up
+            sh "sleep 30" 
+            
+            sshagent(['aws-ssh-key']) {
+                sh """
+                ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
+                    echo "Connected! Waiting for K3s installation to finish..."
+                    
+                    # Wait for kubectl command to exist
+                    until command -v kubectl >/dev/null 2>&1; do sleep 10; done
+                    
+                    # Wait for the node to be Ready
+                    until sudo kubectl get nodes | grep -q "Ready"; do sleep 5; done
+                    
+                    # Deploy
+                    sudo kubectl delete service ${CONTAINER_NAME} || true
+                    sudo kubectl delete deployment ${CONTAINER_NAME} || true
+                    sudo kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
+                    sudo kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000 --node-port=8000
+                EOF
+                """
             }
         }
+    }
+}
 
         stage('Health Check') {
             steps {
