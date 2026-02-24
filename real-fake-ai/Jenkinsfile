@@ -54,43 +54,29 @@ pipeline {
 stage('Kubernetes Deployment') {
     steps {
         script {
-            // Give the instance a moment to breathe
-            sh "sleep 30" 
+            // Give K3s a flat 60 seconds to finish background tasks
+            sh "sleep 60" 
             
             sshagent(['aws-ssh-key']) {
-                // Use a slash to escape the EOF if you want Jenkins variables to expand 
-                // but keep the closing EOF flush to the left.
                 sh """
 ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
-    echo "Connected! Waiting for K3s installation to finish..."
+    echo "Starting Deployment..."
+
+    # Use the full path to kubectl just in case it's not in the PATH yet
+    # K3s installs it to /usr/local/bin/kubectl
     
-    # 1. Wait for kubectl to be available
-    until command -v kubectl >/dev/null 2>&1; do 
-        echo "Waiting for kubectl..."
-        sleep 10
-    done
+    # 1. Clean up (adding 'sudo' and full path)
+    sudo /usr/local/bin/kubectl delete service ${CONTAINER_NAME} --ignore-not-found
+    sudo /usr/local/bin/kubectl delete deployment ${CONTAINER_NAME} --ignore-not-found
     
-    # 2. Wait for the node to be Ready
-    until sudo kubectl get nodes | grep -q "Ready"; do 
-        echo "Waiting for node readiness..."
-        sleep 5
-    done
+    # 2. Deploy
+    sudo /usr/local/bin/kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
     
-    # 3. Clean up existing resources (optional but keeps it idempotent)
-    sudo kubectl delete service ${CONTAINER_NAME} --ignore-not-found
-    sudo kubectl delete deployment ${CONTAINER_NAME} --ignore-not-found
+    # 3. Expose (Fixed the --node-port error here)
+    sudo /usr/local/bin/kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000
     
-    # 4. Create the deployment
-    sudo kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
-    
-    # 5. Expose the service
-    # Note: 'expose' doesn't support --node-port directly. 
-    # We expose it first, then patch it to set the specific port.
-    sudo kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000
-    
-    # 6. Force the NodePort to 8000 (Note: K8s default range is 30000-32767. 
-    # If this fails, you may need to use a port in that range or config K3s to allow 8000)
-    sudo kubectl patch svc ${CONTAINER_NAME} --type='json' -p '[{"op":"replace","path":"/spec/ports/0/nodePort","value":8000}]'
+    # 4. Check status
+    sudo /usr/local/bin/kubectl get all
 EOF
                 """
             }
