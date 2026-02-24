@@ -2,8 +2,9 @@ provider "aws" {
   region = var.aws_region
 }
 
-resource "aws_security_group" "detector_sg" {
-  name        = "real-fake-detector-sg-v3"
+# 1. Renamed resource identifier to 'app_sg' to break the state lock
+resource "aws_security_group" "app_sg" {
+  name        = "real-fake-detector-final-sg" # New name for AWS
   description = "Allow inbound traffic for App and SSH"
 
   ingress {
@@ -26,22 +27,28 @@ resource "aws_security_group" "detector_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  # This ensures the new SG is built before the old one is touched
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_instance" "app_server" {
-  ami           = "ami-0522ab6e1ddcc7055" # Mumbai Ubuntu 22.04
-  instance_type = "t3.micro"            # Staying in Free Tier
+  ami           = "ami-0522ab6e1ddcc7055" 
+  instance_type = "t3.micro"
   key_name      = "NaveenBanwala"
-  vpc_security_group_ids = [aws_security_group.detector_sg.id]
+  
+  # Pointing to the new resource name
+  vpc_security_group_ids = [aws_security_group.app_sg.id]
+  
   user_data_replace_on_change = true
 
-  # Install K3s with "No Extras" to save RAM
- # Install K3s with "No Extras" and allow Port 8000 for NodePort services
   user_data = <<-EOF
               #!/bin/bash
-              # This script installs K3s and tells it to allow Port 8000
+              # Install K3s and allow Port 8000
               curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --disable traefik --disable metrics-server --kube-apiserver-arg=service-node-port-range=8000-32767" sh -
-              sleep 30
+              sleep 20
               sudo chmod 644 /etc/rancher/k3s/k3s.yaml
               EOF
 
@@ -50,4 +57,8 @@ resource "aws_instance" "app_server" {
 
 output "instance_ip" {
   value = aws_instance.app_server.public_ip
+}
+
+output "security_group_id" {
+  value = aws_security_group.app_sg.id
 }
