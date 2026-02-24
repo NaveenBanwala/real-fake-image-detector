@@ -39,12 +39,13 @@ resource "aws_instance" "app_server" {
  # Install K3s with "No Extras" and allow Port 8000 for NodePort services
   user_data = <<-EOF
               #!/bin/bash
+              # This script installs K3s and tells it to allow Port 8000
               curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --disable traefik --disable metrics-server --kube-apiserver-arg=service-node-port-range=8000-32767" sh -
               sleep 30
               sudo chmod 644 /etc/rancher/k3s/k3s.yaml
               EOF
 
-  tags = { Name = "Real-Fake-K8s-FreeTier" }
+  tags = { Name = "Real-Fake-K8s-Final-Deployment" }
 }
 
 output "instance_ip" {
