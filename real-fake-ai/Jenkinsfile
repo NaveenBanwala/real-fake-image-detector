@@ -37,53 +37,42 @@ pipeline {
             }
         }
 
-  stage('Terraform Infra Provisioning') {
-        steps {
-            script {
-                def tfHome = tool name: 'Terraform' 
-                
-                withEnv(["PATH+TF=${tfHome}"]) {
-                    dir('real-fake-ai/terraform') { 
-                        // Force clean the stale state from us-east-1
-                        // sh 'rm -rf .terraform* terraform.tfstate*'
-                        
-                        sh 'terraform init'
-                        sh 'terraform apply -auto-approve'
-                    }
+stage('Terraform Infra Provisioning') {
+    steps {
+        script {
+            def tfHome = tool name: 'Terraform' 
+            withEnv(["PATH+TF=${tfHome}"]) {
+                dir('real-fake-ai/terraform') { 
+                    sh 'terraform init'
+                    sh 'terraform apply -auto-approve'
+                    
+                    // Capture the IP from Terraform output
+                    // Assumes you have 'output "instance_ip" { value = aws_instance.app_server.public_ip }' in main.tf
+                    env.SERVER_IP = sh(script: "terraform output -raw instance_ip", returnStdout: true).trim()
                 }
             }
         }
     }
+}
 
-    stage('Kubernetes Deployment') {
-            steps {
-                script {
-                    def serverIp = "3.111.150.46" // Ensure this is your actual EC2 IP
-                    
-                    sshagent(['aws-ssh-key']) {
-                        sh """
-                        ssh -o StrictHostKeyChecking=no ubuntu@${serverIp} << 'EOF'
-                            # 1. Wait for K3s to initialize
-                            until sudo kubectl get nodes; do sleep 5; done
-                            
-                            # 2. Deploy the app using K8s (The Resume Move)
-                            # We create a deployment and expose it as a NodePort
-                            sudo kubectl delete deployment ${CONTAINER_NAME} || true
-                            sudo kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:latest
-                            
-                            # 3. Expose port 8000
-                            sudo kubectl delete service ${CONTAINER_NAME} || true
-                            sudo kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000
-                            
-                            # 4. Patch the service to use a fixed port (optional but easier for Health Check)
-                            # This makes the app available specifically on port 30001
-                            # sudo kubectl patch svc ${CONTAINER_NAME} --type='json' -p '[{"op":"replace","path":"/spec/ports/0/nodePort","value":30001}]'
-                        EOF
-                        """
-                    }
-                }
+stage('Kubernetes Deployment') {
+    steps {
+        script {
+            // Use the dynamic IP we just captured
+            sshagent(['aws-ssh-key']) {
+                sh """
+                ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
+                    until sudo kubectl get nodes; do sleep 5; done
+                    sudo kubectl delete deployment ${CONTAINER_NAME} || true
+                    sudo kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
+                    sudo kubectl delete service ${CONTAINER_NAME} || true
+                    sudo kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000
+                EOF
+                """
             }
         }
+    }
+}
 
         stage('Health Check') {
             steps {
@@ -105,6 +94,13 @@ pipeline {
                 }
             }
         }
+
+    post {
+        success { echo '✅ AWS + K8s Deployment Completed Successfully!' }
+        failure { echo '❌ Pipeline Failed. Check AWS or Terraform logs.' }
+    }
+}
+
 
 //   stage('Kubernetes Deployment') {
 //             steps {
@@ -183,14 +179,6 @@ pipeline {
 //             }
 //         }
 //     }
-
-
-
-    post {
-        success { echo '✅ AWS + K8s Deployment Completed Successfully!' }
-        failure { echo '❌ Pipeline Failed. Check AWS or Terraform logs.' }
-    }
-}
 
 
 // pipeline {
