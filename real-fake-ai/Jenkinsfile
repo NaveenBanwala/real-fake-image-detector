@@ -62,18 +62,15 @@ stage('Kubernetes Deployment') {
 ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
     echo "Starting Deployment..."
 
-    # Use the full path to kubectl just in case it's not in the PATH yet
-    # K3s installs it to /usr/local/bin/kubectl
-    
-    # 1. Clean up (adding 'sudo' and full path)
+    # 1. Clean up old runs
     sudo /usr/local/bin/kubectl delete service ${CONTAINER_NAME} --ignore-not-found
     sudo /usr/local/bin/kubectl delete deployment ${CONTAINER_NAME} --ignore-not-found
     
-    # 2. Deploy
+    # 2. Deploy the new build
     sudo /usr/local/bin/kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
     
-    # 3. Expose (Fixed the --node-port error here)
-    sudo /usr/local/bin/kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000
+    # 3. Expose specifically on Port 8000 (Matched to your Security Group)
+    sudo /usr/local/bin/kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000 --node-port=8000
     
     # 4. Check status
     sudo /usr/local/bin/kubectl get all
