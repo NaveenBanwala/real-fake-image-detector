@@ -17,7 +17,6 @@ pipeline {
     stages {
         stage('Checkout Code') {
             steps {
-                // Pulls everything including the /terraform and /k8s folders
                 checkout scm
             }
         }
@@ -25,7 +24,6 @@ pipeline {
         stage('Build & Push Image') {
             steps {
                 script {
-                    // Using withCredentials for Docker Login
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
                         sh "echo \$PASS | docker login -u \$USER --password-stdin"
                         sh "docker build -t ${DOCKER_IMAGE}:latest real-fake-ai"
@@ -37,54 +35,51 @@ pipeline {
             }
         }
 
-stage('Terraform Infra Provisioning') {
-    steps {
-        script {
-            def tfHome = tool name: 'Terraform' 
-            withEnv(["PATH+TF=${tfHome}"]) {
-                dir('real-fake-ai/terraform') { 
-                    sh 'terraform init'
-                    sh 'terraform apply -auto-approve'
-                    
-                    // Capture the IP from Terraform output
-                    // Assumes you have 'output "instance_ip" { value = aws_instance.app_server.public_ip }' in main.tf
-                    env.SERVER_IP = sh(script: "terraform output -raw instance_ip", returnStdout: true).trim()
+        stage('Terraform Infra Provisioning') {
+            steps {
+                script {
+                    def tfHome = tool name: 'Terraform' 
+                    withEnv(["PATH+TF=${tfHome}"]) {
+                        dir('real-fake-ai/terraform') { 
+                            sh 'terraform init'
+                            sh 'terraform apply -auto-approve'
+                            
+                            // Capture the IP dynamically so the next stages actually work
+                            env.SERVER_IP = sh(script: "terraform output -raw instance_ip", returnStdout: true).trim()
+                        }
+                    }
                 }
             }
         }
-    }
-}
 
-stage('Kubernetes Deployment') {
-    steps {
-        script {
-            // Use the dynamic IP we just captured
-            sshagent(['aws-ssh-key']) {
-                sh """
-                ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
-                    until sudo kubectl get nodes; do sleep 5; done
-                    sudo kubectl delete deployment ${CONTAINER_NAME} || true
-                    sudo kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
-                    sudo kubectl delete service ${CONTAINER_NAME} || true
-                    sudo kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000
-                EOF
-                """
+        stage('Kubernetes Deployment') {
+            steps {
+                script {
+                    sshagent(['aws-ssh-key']) {
+                        sh """
+                        ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
+                            until sudo kubectl get nodes; do sleep 5; done
+                            sudo kubectl delete deployment ${CONTAINER_NAME} || true
+                            sudo kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
+                            sudo kubectl delete service ${CONTAINER_NAME} || true
+                            sudo kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000
+                        EOF
+                        """
+                    }
+                }
             }
         }
-    }
-}
 
         stage('Health Check') {
             steps {
                 script {
-                    def serverIp = "3.111.150.46"
-                    echo "Checking health at http://${serverIp}:8000..."
+                    // Replaced hardcoded IP with the dynamic env.SERVER_IP
+                    echo "Checking health at http://${env.SERVER_IP}:8000..."
                     
-                    // Retries for 2 minutes while the container starts
                     timeout(time: 2, unit: 'MINUTES') {
                         waitUntil {
                             def status = sh(
-                                script: "curl -s -o /dev/null -w '%{http_code}' http://${serverIp}:8000/docs || true",
+                                script: "curl -s -o /dev/null -w '%{http_code}' http://${env.SERVER_IP}:8000/docs || true",
                                 returnStdout: true
                             ).trim()
                             return (status == "200")
@@ -94,14 +89,17 @@ stage('Kubernetes Deployment') {
                 }
             }
         }
+    } // <--- This closes the STAGES block
 
     post {
-        success { echo '✅ AWS + K8s Deployment Completed Successfully!' }
-        failure { echo '❌ Pipeline Failed. Check AWS or Terraform logs.' }
+        success { 
+            echo '✅ AWS + K8s Deployment Completed Successfully!' 
+        }
+        failure { 
+            echo '❌ Pipeline Failed. Check AWS or Terraform logs.' 
+        }
     }
-}
-
-}
+} // <--- This closes the PIPELINE block
 //   stage('Kubernetes Deployment') {
 //             steps {
 //                 script {
