@@ -51,29 +51,19 @@ pipeline {
                 }
             }
         }
-stage('Kubernetes Deployment') {
-    steps {
-        script {
-            // Give K3s a moment to breathe
-            sh "sleep 20" 
-            sshagent(['aws-ssh-key']) {
-                sh """
-                ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} "
-                echo 'Cleaning old deployment...' && \
-                sudo /usr/local/bin/kubectl delete service ${CONTAINER_NAME} --ignore-not-found && \
-                sudo /usr/local/bin/kubectl delete deployment ${CONTAINER_NAME} --ignore-not-found && \
-                echo 'Creating new deployment...' && \
-                sudo /usr/local/bin/kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG} && \
-                echo 'Exposing service...' && \
-                sudo /usr/local/bin/kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000 && \
-                echo 'Patching Port to 8000...' && \
-                sudo /usr/local/bin/kubectl patch svc ${CONTAINER_NAME} --type='json' -p='[{\\\"op\\\":\\\"replace\\\",\\\"path\\\":\\\"/spec/ports/0/nodePort\\\",\\\"value\\\":8000}]' && \
-                echo 'DEPLOYMENT SUCCESSFUL!'"
-                """
+        stage('Kubernetes Deployment') {
+            steps {
+                script {
+                    sh "sleep 20" 
+                    sshagent(['aws-ssh-key']) {
+                        sh """
+                        ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} "sudo /usr/local/bin/kubectl delete svc ${CONTAINER_NAME} --ignore-not-found && sudo /usr/local/bin/kubectl delete deploy ${CONTAINER_NAME} --ignore-not-found && sudo /usr/local/bin/kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG} && sudo /usr/local/bin/kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000 && sudo /usr/local/bin/kubectl patch svc ${CONTAINER_NAME} --type='json' -p='[{\\\"op\\\":\\\"replace\\\",\\\"path\\\":\\\"/spec/ports/0/nodePort\\\",\\\"value\\\":8000}]'"
+                        """
+                    }
+                }
             }
         }
-    }
-}
+
 
         stage('Health Check') {
             steps {
