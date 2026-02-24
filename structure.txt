@@ -1,15 +1,3 @@
-real-fake-ai/
-│
-├── app/
-│   ├── main.py
-│   ├── model.keras
-│   ├── predict.py
-│
-├── requirements.txt
-├── Dockerfile
-└── Jenkinsfile
-
-
 
 real-fake-ai/
 ├── app/                  # FastAPI Python code
