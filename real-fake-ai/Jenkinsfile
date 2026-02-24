@@ -52,34 +52,24 @@ pipeline {
             }
         }
 stage('Kubernetes Deployment') {
-    steps {
-        script {
-            // Give K3s a flat 60 seconds to finish background tasks
-            sh "sleep 60" 
-            
-            sshagent(['aws-ssh-key']) {
-                sh """
+            steps {
+                script {
+                    sh "sleep 60" 
+                    sshagent(['aws-ssh-key']) {
+                        sh """
 ssh -o StrictHostKeyChecking=no ubuntu@${env.SERVER_IP} << 'EOF'
-    echo "Starting Deployment..."
-
-    # 1. Clean up old runs
-    sudo /usr/local/bin/kubectl delete service ${CONTAINER_NAME} --ignore-not-found
-    sudo /usr/local/bin/kubectl delete deployment ${CONTAINER_NAME} --ignore-not-found
-    
-    # 2. Deploy the new build
-    sudo /usr/local/bin/kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
-    
-    # 3. Expose specifically on Port 8000 (Matched to your Security Group)
-    sudo /usr/local/bin/kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000 --node-port=8000
-    
-    # 4. Check status
-    sudo /usr/local/bin/kubectl get all
+echo "Starting Deployment..."
+sudo /usr/local/bin/kubectl delete service ${CONTAINER_NAME} --ignore-not-found
+sudo /usr/local/bin/kubectl delete deployment ${CONTAINER_NAME} --ignore-not-found
+sudo /usr/local/bin/kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:${IMAGE_TAG}
+sudo /usr/local/bin/kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000 --node-port=8000
+echo "Deployment Complete!"
 EOF
-                """
+                        """
+                    }
+                }
             }
         }
-    }
-}
 
         stage('Health Check') {
             steps {
