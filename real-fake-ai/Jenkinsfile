@@ -58,12 +58,28 @@ pipeline {
     stage('Kubernetes Deployment') {
             steps {
                 script {
-                    // This 'Kubectl' must match the 'Name' you gave in Jenkins Tools
-                    def k8sHome = tool name: 'Kubectl' 
+                    def serverIp = "3.111.150.46" // Ensure this is your actual EC2 IP
                     
-                    withEnv(["PATH+K8S=${k8sHome}"]) {
-                        sh "kubectl apply -f real-fake-ai/k8s/deployment.yaml"
-                        sh "kubectl apply -f real-fake-ai/k8s/service.yaml"
+                    sshagent(['aws-ssh-key']) {
+                        sh """
+                        ssh -o StrictHostKeyChecking=no ubuntu@${serverIp} << 'EOF'
+                            # 1. Wait for K3s to initialize
+                            until sudo kubectl get nodes; do sleep 5; done
+                            
+                            # 2. Deploy the app using K8s (The Resume Move)
+                            # We create a deployment and expose it as a NodePort
+                            sudo kubectl delete deployment ${CONTAINER_NAME} || true
+                            sudo kubectl create deployment ${CONTAINER_NAME} --image=${DOCKER_IMAGE}:latest
+                            
+                            # 3. Expose port 8000
+                            sudo kubectl delete service ${CONTAINER_NAME} || true
+                            sudo kubectl expose deployment ${CONTAINER_NAME} --type=NodePort --port=8000 --target-port=8000
+                            
+                            # 4. Patch the service to use a fixed port (optional but easier for Health Check)
+                            # This makes the app available specifically on port 30001
+                            # sudo kubectl patch svc ${CONTAINER_NAME} --type='json' -p '[{"op":"replace","path":"/spec/ports/0/nodePort","value":30001}]'
+                        EOF
+                        """
                     }
                 }
             }
@@ -72,30 +88,103 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    // We need to get the LoadBalancer URL or Node IP from K8s
-                    echo "Waiting for Kubernetes Service to provide an endpoint..."
+                    def serverIp = "3.111.150.46"
+                    echo "Checking health at http://${serverIp}:8000..."
                     
-                    timeout(time: 5, unit: 'MINUTES') { 
+                    // Retries for 2 minutes while the container starts
+                    timeout(time: 2, unit: 'MINUTES') {
                         waitUntil {
-                            // This command tries to grab the public IP/DNS of the K8s service
                             def status = sh(
-                                script: "curl -s -o /dev/null -w '%{http_code}' http://YOUR_EC2_PUBLIC_IP:8000/docs || true", 
+                                script: "curl -s -o /dev/null -w '%{http_code}' http://${serverIp}:8000/docs || true",
                                 returnStdout: true
                             ).trim()
-                            
-                            if (status == "200") {
-                                echo "✅ Cloud Deployment is LIVE!"
-                                return true
-                            } else {
-                                echo "Waiting for AWS/K8s to route traffic... (Status: ${status})"
-                                return false
-                            }
+                            return (status == "200")
                         }
                     }
+                    echo "✅ Application is LIVE on Kubernetes!"
                 }
             }
         }
-    }
+
+//   stage('Kubernetes Deployment') {
+//             steps {
+//                 script {
+//                     sh '''
+//                         # 1. Download the kubectl binary
+//                         curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
+                        
+//                         # 2. Make it executable
+//                         chmod +x ./kubectl
+                        
+//                         # 3. Use it (using ./ to point to the local file)
+//                         ./kubectl version --client
+                        
+//                         # 4. Apply your manifests (assuming they are in a 'k8s' folder)
+//                         # ./kubectl apply -f real-fake-ai/k8s/deployment.yaml
+//                         # ./kubectl apply -f real-fake-ai/k8s/service.yaml
+//                     '''
+//                 }
+//             }
+//         }
+
+    
+//     // stage('Deploy to EC2') {
+//     //     steps {
+//     //         script {
+//     //             // The IP from your last Terraform run
+//     //             def serverIp = "3.111.150.46" 
+                
+//     //             // This requires an SSH credential in Jenkins named 'aws-ssh-key'
+//     //             sshagent(['aws-ssh-key']) {
+//     //                 sh """
+//     //                 ssh -o StrictHostKeyChecking=no ubuntu@${serverIp} << 'EOF'
+//     //                     # Install Docker
+//     //                     sudo apt-get update
+//     //                     sudo apt-get install -y docker.io
+                        
+//     //                     # Stop existing container if it exists
+//     //                     sudo docker stop image-api || true
+//     //                     sudo docker rm image-api || true
+                        
+//     //                     # Pull your new image and run it
+//     //                     sudo docker pull ${DOCKER_IMAGE}:latest
+//     //                     sudo docker run -d --name image-api -p 8000:8000 ${DOCKER_IMAGE}:latest
+//     //                 EOF
+//     //                 """
+//     //             }
+//     //         }
+//     //     }
+//     // }
+
+//         stage('Health Check') {
+//             steps {
+//                 script {
+//                     // We need to get the LoadBalancer URL or Node IP from K8s
+//                     echo "Waiting for Kubernetes Service to provide an endpoint..."
+                    
+//                     timeout(time: 5, unit: 'MINUTES') { 
+//                         waitUntil {
+//                             // This command tries to grab the public IP/DNS of the K8s service
+//                             def status = sh(
+//                                 script: "curl -s -o /dev/null -w '%{http_code}' http://YOUR_EC2_PUBLIC_IP:8000/docs || true", 
+//                                 returnStdout: true
+//                             ).trim()
+                            
+//                             if (status == "200") {
+//                                 echo "✅ Cloud Deployment is LIVE!"
+//                                 return true
+//                             } else {
+//                                 echo "Waiting for AWS/K8s to route traffic... (Status: ${status})"
+//                                 return false
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+
+
 
     post {
         success { echo '✅ AWS + K8s Deployment Completed Successfully!' }

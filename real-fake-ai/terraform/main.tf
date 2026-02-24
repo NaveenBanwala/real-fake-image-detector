@@ -29,16 +29,21 @@ resource "aws_security_group" "detector_sg" {
 }
 
 resource "aws_instance" "app_server" {
-  # Updated AMI for ap-south-1 (Mumbai)
-  ami           = "ami-0522ab6e1ddcc7055" 
-  instance_type = "t3.micro"
+  ami           = "ami-0522ab6e1ddcc7055" # Mumbai Ubuntu 22.04
+  instance_type = "t3.micro"            # Staying in Free Tier
   key_name      = "NaveenBanwala"
-
   vpc_security_group_ids = [aws_security_group.detector_sg.id]
 
-  tags = {
-    Name = "Real-Fake-Detector-EC2"
-  }
+  # Install K3s with "No Extras" to save RAM
+ # Install K3s with "No Extras" and allow Port 8000 for NodePort services
+  user_data = <<-EOF
+              #!/bin/bash
+              curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --disable traefik --disable metrics-server --kube-apiserver-arg=service-node-port-range=8000-32767" sh -
+              sleep 30
+              sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+              EOF
+
+  tags = { Name = "Real-Fake-K8s-FreeTier" }
 }
 
 output "instance_ip" {
