@@ -33,6 +33,7 @@ resource "aws_instance" "app_server" {
   instance_type = "t3.micro"            # Staying in Free Tier
   key_name      = "NaveenBanwala"
   vpc_security_group_ids = [aws_security_group.detector_sg.id]
+  user_data_replace_on_change = true
 
   # Install K3s with "No Extras" to save RAM
  # Install K3s with "No Extras" and allow Port 8000 for NodePort services
